@@ -16,22 +16,31 @@ export async function POST(request: Request) {
         }
 
         const user = rows[0];
+
+        // --- SÉCURITÉ : VÉRIFICATION DU STATUT ---
+        // Si le compte est suspendu, on arrête tout ici.
+        if (user.status === 'suspendu') {
+            return NextResponse.json({ 
+                error: "Votre compte est suspendu. Accès refusé." 
+            }, { status: 403 }); // 403 = Forbidden
+        }
+
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
             return NextResponse.json({ error: "Mot de passe incorrect" }, { status: 401 });
         }
 
-        // --- MISE À JOUR CRITIQUE ICI ---
-        // On renvoie 'name' au lieu de 'nom' et on AJOUTE 'telephone' et 'specialite'
+        // --- RÉPONSE SI TOUT EST OK ---
         return NextResponse.json({ 
             user: { 
                 id: user.id, 
-                name: user.name,        // Mis à jour
+                name: user.name,
                 email: user.email,
-                telephone: user.telephone, // Ajouté pour le dashboard
+                telephone: user.telephone,
                 role: user.role,
-                specialite: user.specialite // Ajouté pour le dashboard
+                specialite: user.specialite,
+                status: user.status // Optionnel : renvoyer le statut au front
             } 
         });
 

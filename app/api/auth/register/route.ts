@@ -2,71 +2,94 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
+// --- 1. RÉCUPÉRATION DES MÉDECINS ---
+export async function GET() {
+    try {
+        // Ajout du champ 'status' dans la sélection
+        const [rows]: any = await db.query(
+            'SELECT id, name, email, telephone, specialite, role, status FROM users WHERE role = ? ORDER BY id DESC',
+            ['medecin']
+        );
+        return NextResponse.json(rows);
+    } catch (error: any) {
+        console.error("Erreur Fetch Doctors:", error);
+        return NextResponse.json({ error: "Impossible de récupérer la liste." }, { status: 500 });
+    }
+}
+
+// --- 2. INSCRIPTION (POST) ---
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        // 1. On récupère bien 'telephone' depuis le frontend
-        const { nom, prenom, email, password, telephone, role, date_naissance, specialite } = body;
+        const { nom, prenom, email, password, telephone, specialite, date_naissance, role } = body;
 
-        // 2. Validation de base (Ajout du téléphone dans les champs obligatoires)
-        if (!nom || !prenom || !email || !password || !role || !telephone) {
-            return NextResponse.json(
-                { error: "Veuillez remplir tous les champs obligatoires, y compris le téléphone." }, 
-                { status: 400 }
-            );
+        if (!nom || !prenom || !email || !password || !telephone) {
+            return NextResponse.json({ error: "Champs obligatoires manquants." }, { status: 400 });
         }
 
-        // 3. Vérifier si l'utilisateur existe déjà
-        const [existingUser]: any = await db.query(
-            'SELECT id FROM users WHERE email = ?',
-            [email]
-        );
-
-        if (existingUser && existingUser.length > 0) {
-            return NextResponse.json(
-                { error: "Cet email est déjà associé à un compte." }, 
-                { status: 400 }
-            );
-        }
-
-        // 4. Hachage du mot de passe
+        const finalRole = role === 'medecin' ? 'medecin' : 'patient';
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // 5. Insertion dans la base de données
-        // ATTENTION : On utilise 'name' (combinaison nom + prenom) et on ajoute 'telephone'
-        // Vérifie que ta table a bien ces colonnes : id, name, email, password, telephone, role, date_naissance, specialite
-        await db.query(
-            'INSERT INTO users (name, email, password, telephone, role, date_naissance, specialite) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [
-                `${nom} ${prenom}`, // Fusion pour correspondre à la colonne 'name'
-                email, 
-                hashedPassword, 
-                telephone, // Nouvelle donnée !
-                role, 
-                date_naissance, 
-                role === 'medecin' ? (specialite || 'Généraliste') : null
-            ]
-        );
+        // Insertion avec status 'actif' par défaut
+        const query = `
+            INSERT INTO users (name, email, password, telephone, role, date_naissance, specialite, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'actif')
+        `;
 
-        return NextResponse.json(
-            { message: "Utilisateur créé avec succès !" }, 
-            { status: 201 }
-        );
+        await db.query(query, [
+            `${nom} ${prenom}`, email, hashedPassword, telephone, 
+            finalRole, date_naissance || null, 
+            finalRole === 'medecin' ? (specialite || 'Généraliste') : null
+        ]);
 
+        return NextResponse.json({ message: "Utilisateur créé avec succès !" }, { status: 201 });
     } catch (error: any) {
-        console.error("Erreur Inscription détaillée:", error);
-        
-        if (error.code === 'ECONNREFUSED') {
-            return NextResponse.json(
-                { error: "Impossible de se connecter à la base de données. Vérifiez MySQL." }, 
-                { status: 500 }
-            );
-        }
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
 
-        // Retourne l'erreur SQL précise pour t'aider à déboguer si ça échoue encore
-        return NextResponse.json(
-            { error: `Erreur SQL : ${error.message}` }, 
-            { status: 500 }
+// --- 3. MODIFICATION COMPLÈTE (PUT) ---
+export async function PUT(request: Request) {
+    try {
+        const body = await request.json();
+        const { id, name, email, telephone, specialite } = body;
+
+        await db.query(
+            'UPDATE users SET name = ?, email = ?, telephone = ?, specialite = ? WHERE id = ?',
+            [name, email, telephone, specialite, id]
         );
+
+        return NextResponse.json({ message: "Informations mises à jour !" });
+    } catch (error: any) {
+        return NextResponse.json({ error: "Erreur lors de la modification." }, { status: 500 });
+    }
+}
+
+// --- 4. MISE À JOUR DU STATUT (PATCH) ---
+export async function PATCH(request: Request) {
+    try {
+        const { id, status } = await request.json();
+        
+        await db.query('UPDATE users SET status = ? WHERE id = ?', [status, id]);
+        
+        return NextResponse.json({ message: "Statut mis à jour !" });
+    } catch (error: any) {
+        return NextResponse.json({ error: "Erreur statut." }, { status: 500 });
+    }
+}
+
+// --- 5. SUPPRESSION (DELETE) ---
+export async function DELETE(request: Request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const id = searchParams.get('id');
+
+        if (!id) return NextResponse.json({ error: "ID requis" }, { status: 400 });
+
+        await db.query('DELETE FROM users WHERE id = ?', [id]);
+
+        return NextResponse.json({ message: "Médecin supprimé définitivement." });
+    } catch (error: any) {
+        return NextResponse.json({ error: "Erreur suppression." }, { status: 500 });
     }
 }

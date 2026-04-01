@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     }
 }
 
-// 2. LIRE les créneaux (Médecin, Patient, ou Recherche)
+// 2. LIRE les créneaux (Filtré par statut du médecin)
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const medecin_id = searchParams.get('medecin_id');
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
 
     try {
         if (medecin_id) {
-            // VUE MÉDECIN : Voir ses créneaux + Nom du patient
+            // VUE MÉDECIN : Voir ses propres créneaux
             const [rows] = await db.query(`
                 SELECT d.*, u.name as patient_name 
                 FROM disponibilites d
@@ -41,25 +41,29 @@ export async function GET(request: Request) {
             return NextResponse.json(rows);
 
         } else if (patient_id) {
-            // VUE "MES RENDEZ-VOUS" (Patient)
+            // VUE "MES RENDEZ-VOUS" (Patient) 
+            // Sécurité : On ne montre que les RDV avec des médecins ACTIFS
             const [rows] = await db.query(`
                 SELECT d.*, u.name as medecin_name, u.specialite, 
                        u.telephone as medecin_telephone 
                 FROM disponibilites d
                 JOIN users u ON d.medecin_id = u.id
-                WHERE d.patient_id = ?
+                WHERE d.patient_id = ? AND u.status = 'actif'
                 ORDER BY d.date_heure ASC
             `, [patient_id]);
             return NextResponse.json(rows);
 
         } else {
-            // VUE RECHERCHE GLOBALE
+            // VUE RECHERCHE GLOBALE (Patient)
+            // Sécurité : On cache les médecins suspendus (status != 'actif')
             const [rows] = await db.query(`
                 SELECT d.*, u.name as medecin_name, u.specialite, 
                        u.telephone as medecin_telephone
                 FROM disponibilites d
                 JOIN users u ON d.medecin_id = u.id
-                WHERE d.statut = 'libre' AND d.est_libre = TRUE
+                WHERE d.statut = 'libre' 
+                AND d.est_libre = TRUE 
+                AND u.status = 'actif'
                 ORDER BY d.date_heure ASC
             `);
             return NextResponse.json(rows);
@@ -69,7 +73,7 @@ export async function GET(request: Request) {
     }
 }
 
-// 3. SUPPRIMER un créneau (Corrigé pour lire le corps JSON)
+// 3. SUPPRIMER un créneau
 export async function DELETE(request: Request) {
     try {
         const body = await request.json();
@@ -84,7 +88,7 @@ export async function DELETE(request: Request) {
     }
 }
 
-// 4. VALIDER, REFUSER, ANNULER ou RÉSERVER (Méthode PUT synchronisée)
+// 4. ACTIONS (Valider, Annuler, Réserver)
 export async function PUT(request: Request) {
     try {
         const body = await request.json();
@@ -93,21 +97,18 @@ export async function PUT(request: Request) {
 
         if (!id) return NextResponse.json({ error: "ID du créneau manquant" }, { status: 400 });
 
-        // Cas : Annulation (Médecin/Patient) ou Refus (Médecin)
         if (action === 'refuser' || action === 'annuler' || action === 'libre') {
             await db.query(
                 'UPDATE disponibilites SET statut = "libre", est_libre = TRUE, patient_id = NULL WHERE id = ?',
                 [id]
             );
         } 
-        // Cas : Validation finale par le médecin
         else if (action === 'valider' || action === 'confirme') {
             await db.query(
                 'UPDATE disponibilites SET statut = "confirme", est_libre = FALSE WHERE id = ?',
                 [id]
             );
         } 
-        // Cas : Demande de réservation par le patient
         else if (action === 'reserver') {
             const { patient_id } = body;
             if (!patient_id) return NextResponse.json({ error: "Patient ID manquant" }, { status: 400 });
@@ -117,7 +118,6 @@ export async function PUT(request: Request) {
                 [patient_id, id]
             );
         } 
-        // Cas générique (fallback)
         else {
             await db.query('UPDATE disponibilites SET statut = ? WHERE id = ?', [action, id]);
         }
