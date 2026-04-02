@@ -1,9 +1,10 @@
-// lib/db.ts
 import mysql from 'mysql2/promise';
 
 export const db = mysql.createPool({
-  host: 'localhost', // Essaie 'localhost' si '127.0.0.1' ne marche pas
-  user: 'root',
-  password: '', 
-  database: 'clinique_db',
+    host: 'localhost',
+    user: 'root',
+    password: '', // Ajoute ton mot de passe si nécessaire
+    database: 'clinique_db',
+    waitForConnections: true,
+    connectionLimit: 10,
 });

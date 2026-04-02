@@ -2,14 +2,31 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
-// --- 1. RÉCUPÉRATION DES MÉDECINS ---
+// --- 1. RÉCUPÉRATION DES MÉDECINS (AVEC NOTES) ---
 export async function GET() {
     try {
-        // Ajout du champ 'status' dans la sélection
-        const [rows]: any = await db.query(
-            'SELECT id, name, email, telephone, specialite, role, status FROM users WHERE role = ? ORDER BY id DESC',
-            ['medecin']
-        );
+        // On utilise COALESCE pour mettre 0 si aucune note n'existe
+        // COUNT(avis.id) donne le nombre total d'avis
+        // AVG(avis.note) calcule la moyenne des notes
+        const query = `
+            SELECT 
+                u.id, 
+                u.name, 
+                u.email, 
+                u.telephone, 
+                u.specialite, 
+                u.role, 
+                u.status,
+                COALESCE(AVG(a.note), 0) as note_moyenne,
+                COUNT(a.id) as total_avis
+            FROM users u
+            LEFT JOIN avis a ON u.id = a.medecin_id
+            WHERE u.role = 'medecin'
+            GROUP BY u.id
+            ORDER BY u.id DESC
+        `;
+
+        const [rows]: any = await db.query(query);
         return NextResponse.json(rows);
     } catch (error: any) {
         console.error("Erreur Fetch Doctors:", error);
@@ -27,10 +44,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Champs obligatoires manquants." }, { status: 400 });
         }
 
-        const finalRole = role === 'medecin' ? 'medecin' : 'patient';
+        const finalRole = (role === 'medecin' || role === 'admin') ? role : 'patient';
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insertion avec status 'actif' par défaut
         const query = `
             INSERT INTO users (name, email, password, telephone, role, date_naissance, specialite, status) 
             VALUES (?, ?, ?, ?, ?, ?, ?, 'actif')
