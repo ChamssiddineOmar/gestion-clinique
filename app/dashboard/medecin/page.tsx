@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link'; // Import pour la redirection
 import { 
     Plus, Check, X, Trash2, Clock, 
-    Stethoscope, Phone, Star, Archive, CheckCircle2
+    Stethoscope, Phone, Star, Archive, CheckCircle2,
+    LifeBuoy // Icône de support
 } from 'lucide-react';
 import { Rating } from '@/components/Rating';
 
@@ -21,23 +23,18 @@ export default function MedecinDashboard() {
         }
     }, []);
 
-    // --- LOGIQUE DE FILTRAGE PAR SEMAINE (Lundi à Dimanche) ---
+    // --- LOGIQUE DE FILTRAGE PAR SEMAINE ---
     const isThisWeek = (dateValue: string | Date) => {
         const now = new Date();
         const date = new Date(dateValue);
-        
-        // On récupère le lundi de la semaine actuelle
         const startOfWeek = new Date(now);
         const day = now.getDay();
         const diff = now.getDate() - day + (day === 0 ? -6 : 1); 
         startOfWeek.setDate(diff);
         startOfWeek.setHours(0, 0, 0, 0);
-
-        // On récupère le dimanche de la semaine actuelle
         const endOfWeek = new Date(startOfWeek);
         endOfWeek.setDate(startOfWeek.getDate() + 6);
         endOfWeek.setHours(23, 59, 59, 999);
-
         return date >= startOfWeek && date <= endOfWeek;
     };
 
@@ -45,7 +42,6 @@ export default function MedecinDashboard() {
         try {
             const res = await fetch('/api/auth/register'); 
             const data = await res.json();
-            // On cherche dans la table users (via l'api register qui liste les users)
             const myData = data.find((m: any) => m.id === id);
             if (myData) {
                 setStats({ 
@@ -113,7 +109,7 @@ export default function MedecinDashboard() {
                         </h1>
                         <div className="flex items-center gap-4 mt-1">
                             <span className="text-indigo-600 text-[10px] font-black uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded">
-                                {user?.specialite || 'Généraliste'}
+                                {user?.specialite || 'Praticien'}
                             </span>
                             <span className="text-slate-400 text-[10px] font-black uppercase flex items-center gap-1">
                                 <Phone size={12} /> {user?.telephone}
@@ -121,9 +117,21 @@ export default function MedecinDashboard() {
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                    <span className="text-[10px] font-black text-emerald-700 uppercase">Cabinet Ouvert</span>
+
+                <div className="flex items-center gap-3">
+                    {/* BOUTON SUPPORT TECHNIQUE AJOUTÉ ICI */}
+                    <Link 
+                        href={`/support?nom=Dr. ${encodeURIComponent(user?.name || '')}&email=${encodeURIComponent(user?.email || '')}`}
+                        className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-5 py-2.5 rounded-full transition-all border border-slate-200 group"
+                    >
+                        <LifeBuoy size={16} className="group-hover:rotate-45 transition-transform" />
+                        <span className="text-[10px] font-black uppercase tracking-tight">Support Technique</span>
+                    </Link>
+
+                    <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2.5 rounded-full border border-emerald-100">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-tight">Cabinet Ouvert</span>
+                    </div>
                 </div>
             </div>
 
@@ -155,7 +163,7 @@ export default function MedecinDashboard() {
                     </div>
                 </div>
 
-                {/* COMPTEUR FINAL : TERMINÉS CETTE SEMAINE */}
+                {/* CONSULTATIONS TERMINÉES */}
                 <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center justify-between">
                     <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Consultations Terminées</p>
