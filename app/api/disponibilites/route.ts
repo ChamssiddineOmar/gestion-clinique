@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     }
 }
 
-// 2. LIRE les créneaux avec calcul automatique du statut "TERMINE"
+// 2. LIRE les créneaux
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const medecin_id = searchParams.get('medecin_id');
@@ -56,6 +56,7 @@ export async function GET(request: Request) {
             rows = data;
 
         } else {
+            // CORRECTION ICI : Utilisation de DATE() et CURDATE() pour inclure aujourd'hui
             const [data] = await db.query(`
                 SELECT d.*, u.name as medecin_name, u.specialite, 
                     u.telephone as medecin_telephone,
@@ -63,14 +64,16 @@ export async function GET(request: Request) {
                     (SELECT COUNT(*) FROM avis WHERE medecin_id = u.id) as total_avis
                 FROM disponibilites d
                 JOIN users u ON d.medecin_id = u.id
-                WHERE d.statut = 'libre' AND d.date_heure > NOW()
-                AND d.est_libre = TRUE AND u.status = 'actif'
+                WHERE d.statut = 'libre' 
+                AND DATE(d.date_heure) >= CURDATE()
+                AND d.est_libre = TRUE 
+                AND u.status = 'actif'
                 ORDER BY d.date_heure ASC
             `);
             rows = data;
         }
 
-        // --- Passage automatique à "terminé" si la date est dépassée de plus d'une heure (sécurité) ---
+        // --- Passage automatique à "terminé" si la date est dépassée ---
         const updatedRows = rows.map((rdv: any) => {
             const rdvDate = new Date(rdv.date_heure);
             if (rdv.statut === 'confirme' && rdvDate < now) {
@@ -110,7 +113,6 @@ export async function PUT(request: Request) {
 
         if (!id) return NextResponse.json({ error: "ID du créneau manquant" }, { status: 400 });
 
-        // A. RESERVER (Action Patient)
         if (action === 'reserver') {
             const { patient_id } = body;
             if (!patient_id) return NextResponse.json({ error: "Patient ID manquant" }, { status: 400 });
@@ -120,32 +122,24 @@ export async function PUT(request: Request) {
                 [patient_id, id]
             );
         } 
-        
-        // B. VALIDER / CONFIRMER (Action Médecin)
         else if (action === 'valider' || action === 'confirmer') {
             await db.query(
                 'UPDATE disponibilites SET statut = "confirme", est_libre = FALSE WHERE id = ? AND statut = "en_attente"',
                 [id]
             );
         } 
-
-        // C. TERMINER (Action Patient ou Médecin) - La consultation a eu lieu
         else if (action === 'terminer') {
             await db.query(
                 'UPDATE disponibilites SET statut = "termine" WHERE id = ? AND statut = "confirme"',
                 [id]
             );
         }
-
-        // D. ANNULER / LIBÉRER (Patient ou Médecin)
         else if (action === 'annuler' || action === 'refuser') {
             await db.query(
                 'UPDATE disponibilites SET statut = "libre", est_libre = TRUE, patient_id = NULL WHERE id = ?',
                 [id]
             );
         } 
-
-        // E. CAS GÉNÉRIQUE
         else {
             await db.query('UPDATE disponibilites SET statut = ? WHERE id = ?', [action, id]);
         }
