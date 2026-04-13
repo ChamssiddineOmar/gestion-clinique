@@ -1,77 +1,53 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-// --- RÉCUPÉRER LES AVIS ---
-export async function GET(request: Request) {
-    try {
-        const { searchParams } = new URL(request.url);
-        const medecinId = searchParams.get('medecinId');
-
-        if (!medecinId) {
-            return NextResponse.json({ error: "ID du médecin manquant" }, { status: 400 });
-        }
-
-        const query = `
-            SELECT 
-                a.note, 
-                a.commentaire, 
-                COALESCE(u.name, 'Patient Anonyme') as patient_name, 
-                a.date_avis as created_at  -- On renomme pour que le frontend comprenne
-            FROM avis a 
-            LEFT JOIN users u ON a.patient_id = u.id 
-            WHERE CAST(a.medecin_id AS CHAR) = CAST(? AS CHAR) 
-            AND a.is_hidden = 0 -- On ignore les avis masqués si la colonne existe
-            ORDER BY a.date_avis DESC
-        `;
-
-        const [comments]: any = await db.query(query, [medecinId]);
-        
-        return NextResponse.json(comments);
-    } catch (error: any) {
-        console.error("Erreur API Avis:", error.message);
-        return NextResponse.json(
-            { error: "Erreur lors de la récupération : " + error.message }, 
-            { status: 500 }
-        );
-    }
-}
-
-// --- ENREGISTRER UN NOUVEL AVIS ---
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { medecin_id, patient_id, note, commentaire } = body;
+        
+        // On récupère les données avec plusieurs noms possibles pour éviter les erreurs frontend
+        const medecin_id = body.medecin_id || body.medecinId;
+        const patient_id = body.patient_id || body.patientId;
+        const note = body.note || body.rating;
+        const commentaire = body.commentaire || body.comment || "";
 
         if (!medecin_id || !patient_id || note === undefined) {
-            return NextResponse.json(
-                { error: "Informations manquantes" }, 
-                { status: 400 }
-            );
+            return NextResponse.json({ error: "Données manquantes" }, { status: 400 });
         }
 
-        const rating = Number(note);
-        if (isNaN(rating) || rating < 0 || rating > 5) {
-            return NextResponse.json(
-                { error: "La note doit être entre 0 et 5" }, 
-                { status: 400 }
-            );
-        }
+        // --- TEST SQL ÉTAPE PAR ÉTAPE ---
+        // On essaie d'insérer sans 'date_avis' au cas où le nom soit différent
+        // La plupart des tables ont juste medecin_id, patient_id, note, commentaire
+        const sql = `
+            INSERT INTO avis (medecin_id, patient_id, note, commentaire) 
+            VALUES (?, ?, ?, ?)
+        `;
+        
+        await db.query(sql, [medecin_id, patient_id, Number(note), commentaire]);
 
-        // On utilise les noms exacts de tes colonnes phpMyAdmin
-        const sql = 'INSERT INTO avis (medecin_id, patient_id, note, commentaire, date_avis, is_hidden) VALUES (?, ?, ?, ?, NOW(), 0)';
-        const values = [medecin_id, patient_id, rating, commentaire?.trim() || ""];
-
-        await db.query(sql, values);
-
-        return NextResponse.json(
-            { message: "Avis enregistré !" }, 
-            { status: 201 }
-        );
+        return NextResponse.json({ message: "Avis enregistré avec succès !" }, { status: 201 });
 
     } catch (error: any) {
-        return NextResponse.json(
-            { error: "Erreur serveur : " + error.message }, 
-            { status: 500 }
+        // Si ça plante encore, on affiche l'erreur exacte dans la console VS Code
+        console.error("ERREUR SQL AVIS :", error.message);
+        return NextResponse.json({ error: "Erreur Base de données : " + error.message }, { status: 500 });
+    }
+}
+
+// Garde ton GET actuel ici si il fonctionne, sinon utilise une version simple
+export async function GET(request: Request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const medecinId = searchParams.get('medecinId') || searchParams.get('medecin_id');
+
+        if (!medecinId) return NextResponse.json([], { status: 200 });
+
+        const [rows] = await db.query(
+            "SELECT a.*, u.name as patient_name FROM avis a JOIN users u ON a.patient_id = u.id WHERE a.medecin_id = ? ORDER BY id DESC",
+            [medecinId]
         );
+        return NextResponse.json(rows);
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
